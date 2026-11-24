@@ -1,0 +1,138 @@
+# Keep the message template in sync with lightning-close-strikes.yaml.
+blueprint:
+  name: Lightning distance band
+  author: TechOpt.io
+  description: >
+    Notify once when a strike first enters a distance band, then wait out a
+    cooldown. Strikes closer than the inner edge are ignored, so this can sit
+    beside the close-strikes blueprint. Triggers that arrive during the
+    cooldown are discarded. A restart ends the cooldown early.
+
+    The notification action can use the title and message variables. Distance
+    is kilometers. Azimuth is degrees, 0 at north.
+  domain: automation
+  homeassistant:
+    min_version: "2024.10.0"
+  source_url: https://github.com/techoptio/homeassistant/blob/main/blueprints/automation/techoptio/lightning-distance-band.yaml
+  input:
+    distance_sensor:
+      name: Distance sensor
+      description: Strike distance, in kilometers.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    azimuth_sensor:
+      name: Azimuth sensor
+      description: Strike direction in degrees, with 0 at north. Used only for the sentence.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    near_km:
+      name: Inner edge
+      description: >
+        Closest strike this automation will announce, in kilometers, included.
+        Keep this equal to the close-strikes radius so a strike is handled by
+        only one automation. Exactly 1 km stays here when that radius is 1.
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 500
+          step: 0.1
+          unit_of_measurement: km
+          mode: box
+    far_km:
+      name: Outer edge
+      description: Farthest strike this automation will announce, in kilometers, included.
+      default: 15
+      selector:
+        number:
+          min: 0
+          max: 500
+          step: 0.1
+          unit_of_measurement: km
+          mode: box
+    cooldown:
+      name: Cooldown
+      description: How long to ignore later strikes after an alert. A restart clears this wait.
+      default:
+        hours: 2
+      selector:
+        duration: {}
+    place_name:
+      name: Place name
+      description: Used in the sentence, as in "southwest of home" or "from home".
+      default: home
+      selector:
+        text: {}
+    title:
+      name: Notification title
+      default: Lightning nearby
+      selector:
+        text: {}
+    notify_action:
+      name: Notification
+      description: >
+        Action to run for the alert. The variables title and message are
+        available. For a phone notification, use title and message in the
+        notify data. Add your own priority or targets there.
+      selector:
+        action: {}
+
+variables:
+  near_km: !input near_km
+  far_km: !input far_km
+  azimuth_entity: !input azimuth_sensor
+  place_name: !input place_name
+
+triggers:
+  - trigger: state
+    entity_id: !input distance_sensor
+
+conditions:
+  - condition: template
+    value_template: |
+      {% set new = trigger.to_state.state | float(none) %}
+      {% set old = trigger.from_state.state | float(none) %}
+      {% set near = near_km | float %}
+      {% set far = far_km | float %}
+      {{ new is not none and new >= near and new <= far and (old is none or old > far) }}
+
+actions:
+  - variables:
+      title: !input title
+      message: |
+        {%- set km = trigger.to_state.state | float(0) -%}
+        {%- set deg = states(azimuth_entity) | float(none) -%}
+        {%- set meters = (km * 1000) | round(0) | int -%}
+        {%- if meters >= 1000 -%}
+          {%- set shown = (meters / 1000) | round(1) -%}
+          {%- if shown == 1 -%}
+            {%- set distance = "1 kilometer" -%}
+          {%- elif shown == (shown | int) -%}
+            {%- set distance = (shown | int) ~ " kilometers" -%}
+          {%- else -%}
+            {%- set distance = shown ~ " kilometers" -%}
+          {%- endif -%}
+        {%- elif meters <= 0 -%}
+          {%- set distance = "less than a meter" -%}
+        {%- elif meters == 1 -%}
+          {%- set distance = "1 meter" -%}
+        {%- else -%}
+          {%- set distance = meters ~ " meters" -%}
+        {%- endif -%}
+        {%- if deg is number -%}
+          {%- set points = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"] -%}
+          {%- set bearing = points[(((deg + 22.5) / 45) | int) % 8] -%}
+          {%- set where = bearing ~ " of " ~ place_name -%}
+        {%- else -%}
+          {%- set where = "from " ~ place_name -%}
+        {%- endif -%}
+        Lightning strike {{ distance }} {{ where }}.
+  - action: !input notify_action
+  - delay: !input cooldown
+
+mode: single
+max_exceeded: silent

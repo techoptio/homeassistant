@@ -1,0 +1,200 @@
+# Keep the message template in sync with lightning-distance-band.yaml.
+blueprint:
+  name: Lightning close strikes
+  author: TechOpt.io
+  description: >
+    Notify on each new strike inside a close radius, up to a cap in the window
+    that starts with the first alert. The window does not slide. The next
+    strike after the window expires opens a new one, even if the cap was
+    already reached.
+
+    Create an input_number (minimum 0, step 1, maximum at least the cap) and
+    an input_datetime with both date and time before use. Set this radius
+    equal to the distance-band inner edge so the ranges do not overlap.
+    Exactly the boundary stays with the band automation.
+
+    This triggers on the counter and reads distance when the condition runs.
+    That fits a feed which updates the counter and then the distance in the
+    same handler: Home Assistant schedules this trigger and returns, so the
+    new distance is in place before the condition reads it. A counter change
+    whose distance is outside the radius does not use up an alert.
+
+    The notification action can use the title and message variables.
+  domain: automation
+  homeassistant:
+    min_version: "2024.10.0"
+  source_url: https://github.com/techoptio/homeassistant/blob/main/blueprints/automation/techoptio/lightning-close-strikes.yaml
+  input:
+    counter_sensor:
+      name: Strike counter
+      description: Increases by one for each tracked strike. A drop, including a reset to 0, does not notify.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    distance_sensor:
+      name: Distance sensor
+      description: Strike distance, in kilometers. Read when the counter trigger's condition runs.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    azimuth_sensor:
+      name: Azimuth sensor
+      description: Strike direction in degrees, with 0 at north. Used only for the sentence.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    close_km:
+      name: Close radius
+      description: >
+        Announce strikes strictly inside this distance, in kilometers. Keep
+        this equal to the distance-band inner edge.
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 500
+          step: 0.1
+          unit_of_measurement: km
+          mode: box
+    max_alerts:
+      name: Alerts per window
+      description: How many close alerts to send before staying quiet for the rest of the window.
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 20
+          step: 1
+          mode: box
+    window_minutes:
+      name: Window
+      description: Length of the window that starts when the first close alert of that window is sent.
+      default: 60
+      selector:
+        number:
+          min: 1
+          max: 1440
+          step: 1
+          unit_of_measurement: min
+          mode: box
+    alert_count:
+      name: Alert count
+      description: input_number that stores how many close alerts have been sent in the open window.
+      selector:
+        entity:
+          filter:
+            - domain: input_number
+    window_start:
+      name: Window start
+      description: input_datetime, with date and time, that stores when the open window started.
+      selector:
+        entity:
+          filter:
+            - domain: input_datetime
+    place_name:
+      name: Place name
+      description: Used in the sentence, as in "southwest of home" or "from home".
+      default: home
+      selector:
+        text: {}
+    title:
+      name: Notification title
+      default: Lightning nearby
+      selector:
+        text: {}
+    notify_action:
+      name: Notification
+      description: >
+        Action to run for each alert that is allowed through. The variables
+        title and message are available. Add your own priority or targets there.
+      selector:
+        action: {}
+
+variables:
+  close_km: !input close_km
+  max_alerts: !input max_alerts
+  window_minutes: !input window_minutes
+  distance_entity: !input distance_sensor
+  azimuth_entity: !input azimuth_sensor
+  count_entity: !input alert_count
+  window_start_entity: !input window_start
+  place_name: !input place_name
+
+triggers:
+  - trigger: state
+    entity_id: !input counter_sensor
+
+conditions:
+  - condition: template
+    value_template: |
+      {% set dist = states(distance_entity) | float(none) %}
+      {% set new = trigger.to_state.state | int(none) %}
+      {% set old = trigger.from_state.state | int(0) %}
+      {{ dist is not none and dist < (close_km | float) and new is not none and new > old }}
+
+actions:
+  - variables:
+      title: !input title
+      message: |
+        {%- set km = states(distance_entity) | float(0) -%}
+        {%- set deg = states(azimuth_entity) | float(none) -%}
+        {%- set meters = (km * 1000) | round(0) | int -%}
+        {%- if meters >= 1000 -%}
+          {%- set shown = (meters / 1000) | round(1) -%}
+          {%- if shown == 1 -%}
+            {%- set distance = "1 kilometer" -%}
+          {%- elif shown == (shown | int) -%}
+            {%- set distance = (shown | int) ~ " kilometers" -%}
+          {%- else -%}
+            {%- set distance = shown ~ " kilometers" -%}
+          {%- endif -%}
+        {%- elif meters <= 0 -%}
+          {%- set distance = "less than a meter" -%}
+        {%- elif meters == 1 -%}
+          {%- set distance = "1 meter" -%}
+        {%- else -%}
+          {%- set distance = meters ~ " meters" -%}
+        {%- endif -%}
+        {%- if deg is number -%}
+          {%- set points = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"] -%}
+          {%- set bearing = points[(((deg + 22.5) / 45) | int) % 8] -%}
+          {%- set where = bearing ~ " of " ~ place_name -%}
+        {%- else -%}
+          {%- set where = "from " ~ place_name -%}
+        {%- endif -%}
+        Lightning strike {{ distance }} {{ where }}.
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: |
+              {% set ts = state_attr(window_start_entity, 'timestamp') %}
+              {{ ts is none or (now().timestamp() - ts) >= ((window_minutes | float) * 60) }}
+        sequence:
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: !input window_start
+            data:
+              timestamp: "{{ now().timestamp() }}"
+          - action: input_number.set_value
+            target:
+              entity_id: !input alert_count
+            data:
+              value: 1
+          - action: !input notify_action
+      - conditions:
+          - condition: template
+            value_template: "{{ states(count_entity) | int(0) < (max_alerts | int) }}"
+        sequence:
+          - action: input_number.set_value
+            target:
+              entity_id: !input alert_count
+            data:
+              value: "{{ states(count_entity) | int(0) + 1 }}"
+          - action: !input notify_action
+
+mode: queued
+max: 10
+max_exceeded: silent
