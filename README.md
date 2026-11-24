@@ -3,9 +3,9 @@
 Blueprints from the Home Assistant setups written about on
 [techopt.io/tag/home-assistant](https://www.techopt.io/tag/home-assistant).
 
-Files live under `blueprints/automation/techoptio/`, which is the path Home
-Assistant uses for imported automations. Use the badge beside a blueprint, or
-copy the YAML into that folder on your instance.
+Files live under `blueprints/automation/`. Use the badge beside a blueprint,
+or copy the YAML onto your instance. After import, Home Assistant files them
+under `config/blueprints/automation/techoptio/`.
 
 ## Lightning notification
 
@@ -22,7 +22,7 @@ capped close alerts. A strike at exactly 1 km stays with the band.
 
 ### Distance band
 
-[![Import Lightning distance band](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftechoptio%2Fhomeassistant%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Ftechoptio%2Flightning-distance-band.yaml)
+[![Import Lightning distance band](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftechoptio%2Fhomeassistant%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Flightning-distance-band.yaml)
 
 One alert when a strike first enters the band, then silence for a cooldown
 (default 2 hours). A later strike that is still inside the band does not
@@ -32,7 +32,7 @@ rather than queued. A restart ends the cooldown early.
 
 ### Close strikes
 
-[![Import Lightning close strikes](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftechoptio%2Fhomeassistant%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Ftechoptio%2Flightning-close-strikes.yaml)
+[![Import Lightning close strikes](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftechoptio%2Fhomeassistant%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Flightning-close-strikes.yaml)
 
 Each new strike inside the close radius can notify, up to a cap (default 3)
 in a window that starts with the first of those alerts (default 60 minutes).

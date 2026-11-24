@@ -23,7 +23,7 @@ blueprint:
   domain: automation
   homeassistant:
     min_version: "2024.10.0"
-  source_url: https://github.com/techoptio/homeassistant/blob/main/blueprints/automation/techoptio/lightning-close-strikes.yaml
+  source_url: https://github.com/techoptio/homeassistant/blob/main/blueprints/automation/lightning-close-strikes.yaml
   input:
     counter_sensor:
       name: Strike counter
