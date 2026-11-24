@@ -131,7 +131,7 @@ actions:
           {%- set where = "from " ~ place_name -%}
         {%- endif -%}
         Lightning strike {{ distance }} {{ where }}.
-  - action: !input notify_action
+  - sequence: !input notify_action
   - delay: !input cooldown
 
 mode: single

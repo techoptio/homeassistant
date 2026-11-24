@@ -183,7 +183,7 @@ actions:
               entity_id: !input alert_count
             data:
               value: 1
-          - action: !input notify_action
+          - sequence: !input notify_action
       - conditions:
           - condition: template
             value_template: "{{ states(count_entity) | int(0) < (max_alerts | int) }}"
@@ -193,7 +193,7 @@ actions:
               entity_id: !input alert_count
             data:
               value: "{{ states(count_entity) | int(0) + 1 }}"
-          - action: !input notify_action
+          - sequence: !input notify_action
 
 mode: queued
 max: 10
