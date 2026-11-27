@@ -3,9 +3,11 @@
 Blueprints from the Home Assistant setups written about on
 [techopt.io/tag/home-assistant](https://www.techopt.io/tag/home-assistant).
 
-Files live under `blueprints/automation/`. Use the badge beside a blueprint,
-or copy the YAML onto your instance. After import, Home Assistant files them
-under `config/blueprints/automation/techoptio/`.
+Automation blueprints live under `blueprints/automation/`. The notify
+script lives under `blueprints/script/`. Use the badge beside a blueprint,
+or copy the YAML onto your instance. After import, Home Assistant files
+automation blueprints under `config/blueprints/automation/techoptio/` and
+script blueprints under `config/blueprints/script/techoptio/`.
 
 ## Lightning notification
 
@@ -74,7 +76,43 @@ plus that name.
 `Lightning strike 900 meters southwest of home.`
 
 The notification action is yours. `title` and `message` are set just before
-it runs. Default title: `Lightning nearby`.
+it runs. Default title: `Lightning nearby`. The notify script below is one
+way to send them.
+
+## Notify
+
+[![Import Notify](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ftechoptio%2Fhomeassistant%2Fblob%2Fmain%2Fblueprints%2Fscript%2Fnotify.yaml)
+
+A script other automations call. Name it `notify` and the action is
+`script.notify`. Choose the phone once. It has to be a Companion app device,
+because `urgent` and `critical` set the interruption level to time-sensitive.
+Announce and the two speaker targets are notify entities. The person and the
+quiet boolean are optional.
+
+Leave `devices` empty to use the priority. `info` and `normal` go to the
+phone. `urgent` and `critical` also go to the announce target when a
+configured person is home. If the person input is empty, `urgent` and
+`critical` announce without a home check.
+
+While the quiet boolean is on, announce and both speaker targets are dropped
+unless the priority is `critical`. The phone and the dashboard still send.
+Passing `devices` sends only to those roles, and quiet mode still removes
+the speaker roles.
+
+The roles are `phone`, `announce`, `speaker`, `speaker_speak`, and
+`dashboard`. `speaker` announces and `speaker_speak` speaks. The dashboard
+role creates a persistent notification. Announce and speaker targets hear
+the message only. The title is for the phone and the dashboard. Default
+title: `Home`.
+
+Each target is sent on its own. One failure does not stop the others. The
+script mode is `queued`, up to 10 calls.
+
+The lightning blueprints can call this from their notification action. They
+already set `title` and `message`. Set `priority` on that call.
+
+In the apartment, announce is the Everywhere group, the speaker targets are
+the coffee bar Echo, and the quiet boolean is Bedtime.
 
 ## License
 

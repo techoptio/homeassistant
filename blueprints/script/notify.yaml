@@ -1,0 +1,322 @@
+blueprint:
+  name: Notify
+  author: TechOpt.io
+  description: >
+    Send a house notification by priority. Leave devices empty for the
+    defaults. info and normal go to the phone. urgent and critical also go
+    to the announce target when a configured person is home. If the person
+    input is empty, urgent and critical announce without a home check.
+
+    The phone is a Companion app device. urgent and critical set its
+    interruption level to time-sensitive.
+
+    While the quiet boolean is on, announce and both speaker targets are
+    dropped unless the priority is critical. The phone and the dashboard
+    still send. Passing devices sends only to those roles, and quiet mode
+    still removes the speaker roles.
+
+    Announce and speaker targets are notify entities. They hear the message
+    only. The title is for the phone and the dashboard.
+  domain: script
+  homeassistant:
+    min_version: "2024.10.0"
+  source_url: https://github.com/techoptio/homeassistant/blob/main/blueprints/script/notify.yaml
+  input:
+    phone:
+      name: Phone
+      description: Companion app device. urgent and critical mark it time-sensitive.
+      selector:
+        device:
+          filter:
+            integration: mobile_app
+    person:
+      name: Person
+      description: >
+        Optional. When set, urgent and critical announce only while this
+        person is home. Leave empty to announce without a home check.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: person
+    quiet:
+      name: Quiet mode
+      description: >
+        Optional input_boolean, such as a bedtime helper. While it is on,
+        announce and speaker targets are kept only for critical.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: input_boolean
+    announce:
+      name: Announce target
+      description: >
+        Optional notify entity. Used for urgent and critical when devices
+        is empty and the home check passes. Receives the message only.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: notify
+    speaker:
+      name: Speaker announce
+      description: Optional notify entity for the speaker role. Receives the message only.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: notify
+    speaker_speak:
+      name: Speaker speak
+      description: Optional notify entity for the speaker_speak role. Receives the message only.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: notify
+    default_title:
+      name: Default title
+      description: Used when a call omits the title. The phone and the dashboard show it.
+      default: Home
+      selector:
+        text:
+
+description: >
+  Send a notification by priority. Leave devices empty for the defaults.
+  info and normal go to the phone. urgent and critical also announce when
+  the home check passes, and they mark the phone time-sensitive. While
+  quiet mode is on, speaker targets are kept only for critical.
+
+icon: mdi:bell
+mode: queued
+max: 10
+
+fields:
+  message:
+    name: Message
+    description: Notification text. Spoken aloud on announce and speaker targets.
+    required: true
+    selector:
+      text:
+        multiline: true
+  title:
+    name: Title
+    description: Title for the phone and the dashboard. Announce and speaker targets use the message only.
+    default: Home
+    selector:
+      text: {}
+  priority:
+    name: Priority
+    description: >
+      Urgent and critical mark the phone time-sensitive. When devices is
+      empty, both also use the announce target when the home check passes.
+      While quiet mode is on, speaker targets are kept only for critical.
+    default: normal
+    selector:
+      select:
+        options:
+          - info
+          - normal
+          - urgent
+          - critical
+        mode: dropdown
+  devices:
+    name: Devices
+    description: >
+      Where to send this. Leave empty to use the priority defaults. While
+      quiet mode is on, announce and speaker targets are dropped unless the
+      priority is critical.
+    selector:
+      select:
+        multiple: true
+        mode: list
+        options:
+          - label: Phone
+            value: phone
+          - label: Announce
+            value: announce
+          - label: Speaker announce
+            value: speaker
+          - label: Speaker speak
+            value: speaker_speak
+          - label: Dashboard
+            value: dashboard
+
+variables:
+  person_raw: !input person
+  quiet_raw: !input quiet
+  announce_raw: !input announce
+  speaker_raw: !input speaker
+  speaker_speak_raw: !input speaker_speak
+  default_title: !input default_title
+
+sequence:
+  - variables:
+      notify_title: "{{ title | default(default_title, true) }}"
+      notify_priority: "{{ priority | default('normal', true) }}"
+      targets_json: |
+        {% set picked = namespace(items=[]) %}
+        {% set raw_chosen = devices | default([], true) %}
+        {% if raw_chosen is string %}
+          {% if raw_chosen not in ['', '[]', 'none', 'unknown'] %}
+            {% set picked.items = [raw_chosen] %}
+          {% endif %}
+        {% elif raw_chosen is iterable and raw_chosen is not string %}
+          {% set picked.items = raw_chosen | list %}
+        {% endif %}
+        {% set prio = priority | default('normal', true) %}
+        {% set people = namespace(ids=[]) %}
+        {% set praw = person_raw | default([], true) %}
+        {% if praw is string and praw not in ['', 'none', 'unknown', '[]'] %}
+          {% set people.ids = [praw] %}
+        {% elif praw is iterable and praw is not string %}
+          {% set people.ids = praw | list %}
+        {% endif %}
+        {% set quiet_ids = namespace(ids=[]) %}
+        {% set qraw = quiet_raw | default([], true) %}
+        {% if qraw is string and qraw not in ['', 'none', 'unknown', '[]'] %}
+          {% set quiet_ids.ids = [qraw] %}
+        {% elif qraw is iterable and qraw is not string %}
+          {% set quiet_ids.ids = qraw | list %}
+        {% endif %}
+        {% set ns = namespace(items=['phone']) %}
+        {% if picked.items %}
+          {% set ns.items = picked.items %}
+        {% elif prio in ['urgent', 'critical'] %}
+          {% set home = namespace(ok=false) %}
+          {% for p in people.ids %}
+            {% if is_state(p, 'home') %}
+              {% set home.ok = true %}
+            {% endif %}
+          {% endfor %}
+          {% if (people.ids | length) == 0 or home.ok %}
+            {% set ns.items = ['phone', 'announce'] %}
+          {% endif %}
+        {% endif %}
+        {% set quiet = namespace(on=false) %}
+        {% for q in quiet_ids.ids %}
+          {% if is_state(q, 'on') %}
+            {% set quiet.on = true %}
+          {% endif %}
+        {% endfor %}
+        {% if quiet.on and prio != 'critical' %}
+          {% set ns.items = ns.items | reject('in', ['announce', 'speaker', 'speaker_speak']) | list %}
+        {% endif %}
+        {{ ns.items | to_json }}
+      announce_ids_json: |
+        {% set raw = announce_raw | default([], true) %}
+        {% if raw is string and raw not in ['', 'none', 'unknown', '[]'] %}
+          {{ [raw] | to_json }}
+        {% elif raw is iterable and raw is not string %}
+          {{ raw | list | to_json }}
+        {% else %}
+          {{ [] | to_json }}
+        {% endif %}
+      speaker_ids_json: |
+        {% set raw = speaker_raw | default([], true) %}
+        {% if raw is string and raw not in ['', 'none', 'unknown', '[]'] %}
+          {{ [raw] | to_json }}
+        {% elif raw is iterable and raw is not string %}
+          {{ raw | list | to_json }}
+        {% else %}
+          {{ [] | to_json }}
+        {% endif %}
+      speaker_speak_ids_json: |
+        {% set raw = speaker_speak_raw | default([], true) %}
+        {% if raw is string and raw not in ['', 'none', 'unknown', '[]'] %}
+          {{ [raw] | to_json }}
+        {% elif raw is iterable and raw is not string %}
+          {{ raw | list | to_json }}
+        {% else %}
+          {{ [] | to_json }}
+        {% endif %}
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >
+                {% set targets = targets_json if targets_json is not string else (targets_json | from_json([])) %}
+                {{ 'phone' in targets and notify_priority in ['urgent', 'critical'] }}
+        sequence:
+          - continue_on_error: true
+            domain: mobile_app
+            type: notify
+            device_id: !input phone
+            title: "{{ notify_title }}"
+            message: "{{ message }}"
+            data:
+              push:
+                interruption-level: time-sensitive
+      - conditions:
+          - condition: template
+            value_template: >
+                {% set targets = targets_json if targets_json is not string else (targets_json | from_json([])) %}
+                {{ 'phone' in targets }}
+        sequence:
+          - continue_on_error: true
+            domain: mobile_app
+            type: notify
+            device_id: !input phone
+            message: "{{ message }}"
+            title: "{{ notify_title }}"
+  - if:
+      - condition: template
+        value_template: >
+            {% set targets = targets_json if targets_json is not string else (targets_json | from_json([])) %}
+            {{ 'announce' in targets }}
+    then:
+      - repeat:
+          for_each: "{{ announce_ids_json if announce_ids_json is not string else (announce_ids_json | from_json([])) }}"
+          sequence:
+            - action: notify.send_message
+              continue_on_error: true
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                message: "{{ message }}"
+  - if:
+      - condition: template
+        value_template: >
+            {% set targets = targets_json if targets_json is not string else (targets_json | from_json([])) %}
+            {{ 'speaker' in targets }}
+    then:
+      - repeat:
+          for_each: "{{ speaker_ids_json if speaker_ids_json is not string else (speaker_ids_json | from_json([])) }}"
+          sequence:
+            - action: notify.send_message
+              continue_on_error: true
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                message: "{{ message }}"
+  - if:
+      - condition: template
+        value_template: >
+            {% set targets = targets_json if targets_json is not string else (targets_json | from_json([])) %}
+            {{ 'speaker_speak' in targets }}
+    then:
+      - repeat:
+          for_each: "{{ speaker_speak_ids_json if speaker_speak_ids_json is not string else (speaker_speak_ids_json | from_json([])) }}"
+          sequence:
+            - action: notify.send_message
+              continue_on_error: true
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                message: "{{ message }}"
+  - if:
+      - condition: template
+        value_template: >
+            {% set targets = targets_json if targets_json is not string else (targets_json | from_json([])) %}
+            {{ 'dashboard' in targets }}
+    then:
+      - action: persistent_notification.create
+        continue_on_error: true
+        data:
+          title: "{{ notify_title }}"
+          message: "{{ message }}"
